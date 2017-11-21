@@ -214,9 +214,12 @@ def InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
             AR = (SA.accept / float(SA.interval)) * 100
             if AR > SA.upperbnd:
                 SA.T /= SA.alpha
+                SA.accept = 0
             elif AR < SA.lwrbnd:
                 SA.T *= SA.alpha
+                SA.accept = 0
             else:
+                SA.accept = 0
                 break
         X = Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
     return
