@@ -2,12 +2,13 @@
 #  Simulated Annealing for optimisation
 #  Misha Klein
 #
-#
-#
+#  Multiprocessing additions
+#  Koen van der Sanden
 #
 #
 #############################################################
 import numpy as np
+import multiprocessing as mp
 
 '''
 Main function
@@ -31,10 +32,12 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd):
 
     # Adjust initial temperature
     InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
-
+    
+    print 'Initial temp:  ', SA.T
+    
     # Set initial trial:
     X = Xstart
-    SA.potential = V(xdata,ydata,yerr,X)
+    SA.potential = V(SA, xdata,ydata,yerr,X)
     
     steps = 0
     E = 0
@@ -45,7 +48,7 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd):
         if SA.EQ:
             # E will represent the average energy at the current temperature
             # during the cycle of SA.interval steps that has just passed.
-            E += V(xdata, ydata, yerr, X)
+            E += V(SA, xdata, ydata, yerr, X)
 
         if (steps % SA.interval == 0):
             if SA.EQ:
@@ -70,7 +73,13 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd):
         # Accept or reject trial configuration based on Metropolis Monte Carlo.
         # Input: parameters X, output: updates values of parameters X if accepted
         X = Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
-
+    
+    # Close worker processes
+    if SA.MP:
+        print 'Close workers..'
+        SA.processes.close()
+        SA.processes.join()
+        
     print 'Final Temp: ', SA.T
     print 'Final Stepsize: ', SA.step_size
     return X
@@ -80,10 +89,22 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd):
 '''
 Model (Potential)
 '''
-def sigmoid(A, nseed, C, x):
-    return A / (1 + np.exp(-(x-nseed) * C))
+# Single core model function (for multicore see multiprocessing section)
+def model_func(xdata, ydata, yerr, params):
 
-def V(xdata,ydata,yerr,params):
+    # Extract parameters
+    A = params[0]
+    nseed = params[1]
+    C = params[2]
+    
+    # Calculate residuals
+    model_result = A / (1 + np.exp(-(xdata-nseed) * C))
+    residuals = ( (model_result-ydata)/yerr )**2
+    
+    return residuals
+
+def V(SA, xdata,ydata,yerr,params):
+
     '''
     SHOULD ADJUST SUCH THAT THIS WORKS FOR ANY MODEL.
     :param xdata: datapoints
@@ -92,11 +113,14 @@ def V(xdata,ydata,yerr,params):
     :param params: parameters of model to fit
     :return: Chi^2 value. Residual of weighted least squares (chi-squared).
     '''
-    A = params[0]
-    nseed = params[1]
-    C = params[2]
-    model = sigmoid(A,nseed,C,xdata)
-    return np.sum(( (model-ydata)/yerr)**2    )
+    
+    if SA.MP:
+        data = datatotuples(xdata,ydata,yerr,params)
+        residual_sum = np.sum(SA.processes.map_async(mp_model_func,data).get())
+    else:
+        residual_sum = np.sum(model_func(xdata,ydata,yerr,params))
+        
+    return residual_sum
 
 
 '''
@@ -117,15 +141,20 @@ class SimAnneal():
     AR_high: 'upper bound ideal acceptance ratio'. Stepsize (and initially temperature)
               are adjusted to keep the instantaneous acceptance ratio between AR_low and AR_high
     adjust_factor: Adjust the stepsize or temperature to have appreaciable acceptance ratio
+    nprocs: Sets the number of processes to create for multiprocessing
+    use_multiprocessing: If True the program uses multiprocessing and mp_model_func, otherwise it runs on a single core and uses model_func as the model
 
     FURTHER MONITORS
     ----------------
     self.EQ: Will you move to next temperature? Did you equillibrate at current temperature?
     self.StopcCondition: Global criteria to stop the optimisation procedure.
+    self.potential: Variable to store old potential and save on number of computations
+    self.processes: Contains the worker processes (pool) to evaluate the potential
+    self.MP: Flag to use multiprocesing or not
     '''
 
     def __init__(self, Tstart=1.0, delta=2.0, tol=1E-1, adjust_factor=1.1, cooling_rate=0.85, N_int=1000,
-                 AR_low=40, AR_high=60):
+                 AR_low=40, AR_high=60, use_multiprocessing=True, nprocs=4):
         self.T = Tstart
         self.step_size = delta
         self.Tolerance = tol
@@ -138,6 +167,13 @@ class SimAnneal():
         self.cooling_rate = cooling_rate
         self.interval = N_int
         self.potential = np.inf
+        self.MP = use_multiprocessing
+        
+        if self.MP:
+            self.processes = mp.Pool(nprocs)
+        else:
+            self.processes = None
+            
         return
 
 
@@ -152,12 +188,13 @@ def Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
 
     # Let V({dataset}|{parameterset}) be your residual function.
     # Metropolis:
-    Vnew = V(xdata, ydata, yerr, Xtrial)
+    Vnew = V(SA, xdata, ydata, yerr, Xtrial)
     Vold = SA.potential
     if (np.random.uniform() < np.exp(-(Vnew - Vold) / T)):
         X = Xtrial
         SA.accept += 1
         SA.potential = Vnew
+        #print X, SA.potential
     return X
 
 
@@ -170,6 +207,8 @@ def AcceptanceRatio(SA):
     else:
         SA.EQ = True  # <--- the next time around you'll go to TemperatureCycle()
     SA.accept = 0  # reset counter
+    #print 'Step size:  ', SA.step_size
+    #print 'Acceptance ratio:  ', AR
     return
 
 
@@ -178,13 +217,13 @@ def Temperature_Cycle(SA, xdata, ydata, yerr, X, Xstart):
     try:
         Enew = E
     except:
-        E = V(xdata, ydata, yerr, Xstart)
+        E = V(SA, xdata, ydata, yerr, Xstart)
         Enew = E
 
     # compare relative change in "equillibrium residuals".
     # If the average energy does not change more then the set tolerance between two consequetive temperatures
     # this means you are sufficiently close to the global minimum.
-    E = V(xdata, ydata, yerr, X)
+    E = V(SA, xdata, ydata, yerr, X)
     SA.StopCondition = (np.abs(E - Enew) / Enew) < SA.Tolerance
     SA.EQ = False  # Reset
     return
@@ -227,3 +266,40 @@ def InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
                 break
         X = Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
     return
+    
+
+
+'''
+Multiprocessing functions
+'''
+# Map(_async) takes only one argument so the data is first converted to tuples and should be
+# unpacked within the model function
+def datatotuples(xdata,ydata,yerr,params):
+    xdata = xdata.tolist()
+    ydata = ydata.tolist()
+    yerr = yerr.tolist()
+    params = [params]*len(yerr)
+    
+    tuplelist = [(xdata[i],ydata[i],yerr[i],params[i]) for i in range(len(yerr))]
+    return tuplelist
+
+# The multicore version of the model function
+# This function should be adjusted to fit your model    
+def mp_model_func(data):
+    
+    # Unpack data
+    xdata  = data[0]    
+    ydata  = data[1]
+    yerr   = data[2]
+    params = data[3]
+    
+    # Unpack parameters
+    A = params[0]
+    nseed = params[1]
+    C = params[2]
+    
+    # Calculate residuals
+    model_result = A / (1 + np.exp(-(xdata-nseed) * C))
+    residuals = ( (model_result-ydata)/yerr )**2
+    
+    return residuals
