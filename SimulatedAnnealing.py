@@ -34,6 +34,8 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd):
 
     # Set initial trial:
     X = Xstart
+    SA.potential = V(xdata,ydata,yerr,X)
+    
     steps = 0
     E = 0
     while True:
@@ -135,6 +137,7 @@ class SimAnneal():
         self.lwrbnd = AR_low
         self.cooling_rate = cooling_rate
         self.interval = N_int
+        self.potential = np.inf
         return
 
 
@@ -150,10 +153,11 @@ def Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
     # Let V({dataset}|{parameterset}) be your residual function.
     # Metropolis:
     Vnew = V(xdata, ydata, yerr, Xtrial)
-    Vold = V(xdata, ydata, yerr, X)
+    Vold = SA.potential
     if (np.random.uniform() < np.exp(-(Vnew - Vold) / T)):
         X = Xtrial
         SA.accept += 1
+        SA.potential = Vnew
     return X
 
 
