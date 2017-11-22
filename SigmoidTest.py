@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 # Create data
 x = np.linspace(0,100,1000)
-y = 10 / ( 1 + np.exp( (40-x) * 20 )  ) + 2*np.random.rand(len(x))
+y = 10 / ( 1 + np.exp( (40-x) * 20 )  ) + np.random.rand(len(x))
 yerr = np.array([1]*len(x))
 
 # Fit parameters
