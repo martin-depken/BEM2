@@ -13,7 +13,8 @@ import multiprocessing as mp
 '''
 Main function
 '''
-def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd):
+def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, Tstart=1.0, delta=2.0, tol=1E-1, Tfinal=0.01,adjust_factor=1.1, cooling_rate=0.85, N_int=1000,
+                 AR_low=40, AR_high=60, use_multiprocessing=False, nprocs=4):
     '''
     Use Simmulated Annealing to perform Least-Square Fitting
 
@@ -24,11 +25,27 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd):
     :param lwrbnd: lower bound parameters
     :param upbnd:  upper bound parameters. Parameter X[i] will satisfy: lwrbnd <= X[i] <= upbnd[i]
     :return: Optimal parameter set (X, an array)
+
+    ///////////
+    For remaining input arguments (Tstart,delta,tol, etc.) see the 'SimAnneal class'.
+    All of these are settings for the SA-algorithm, such as cooling rate, minimum temperature, tolerance etc.
+    ///////////
+
     '''
 
     # presets
     X = Xstart
-    SA = SimAnneal()
+    SA = SimAnneal(Tstart=Tstart,
+                   delta=delta,
+                   tol=tol,
+                   Tfinal=Tfinal,
+                   adjust_factor=adjust_factor,
+                   cooling_rate=cooling_rate,
+                   N_int=N_int,
+                   AR_low=AR_low,
+                   AR_high=AR_high,
+                   use_multiprocessing=use_multiprocessing,
+                   nprocs=nprocs)
 
     # Adjust initial temperature
     InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
@@ -43,13 +60,14 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd):
     E = 0
     while True:
         steps += 1
+        if(steps % 1E3 == 0):
+            print steps
 
         # I am starting to check If I switch temperature or if I stop simulation
         if SA.EQ:
             # E will represent the average energy at the current temperature
             # during the cycle of SA.interval steps that has just passed.
             E += V(SA, xdata, ydata, yerr, X)
-
         if (steps % SA.interval == 0):
             if SA.EQ:
                 E /= SA.interval
@@ -136,6 +154,7 @@ class SimAnneal():
     delta : initial step size for parameter changes
     tol : Stop condition. If relative change in values is less then tolerance, you're done.
     cooling_rate: Exponential cooling is used (T = T0^{cooling_rate})
+    T_final: sets an additional stop condition.  If T<T_final, then we will exit the algorithm.
     N_int : Number of steps between every check of the acceptance ratio / equillibrium
     AR_low: 'lower bound ideal acceptance ratio'
     AR_high: 'upper bound ideal acceptance ratio'. Stepsize (and initially temperature)
@@ -148,16 +167,17 @@ class SimAnneal():
     ----------------
     self.EQ: Will you move to next temperature? Did you equillibrate at current temperature?
     self.StopcCondition: Global criteria to stop the optimisation procedure.
-    self.potential: Variable to store old potential and save on number of computations
+    self.potential: Variable to store old potential and save on the number of computations
     self.processes: Contains the worker processes (pool) to evaluate the potential
     self.MP: Flag to use multiprocesing or not
     '''
 
-    def __init__(self, Tstart=1.0, delta=2.0, tol=1E-1, adjust_factor=1.1, cooling_rate=0.85, N_int=1000,
-                 AR_low=40, AR_high=60, use_multiprocessing=True, nprocs=4):
+    def __init__(self, Tstart, delta, tol, Tfinal,adjust_factor, cooling_rate, N_int,
+                 AR_low, AR_high, use_multiprocessing, nprocs):
         self.T = Tstart
         self.step_size = delta
         self.Tolerance = tol
+        self.final_temperature = Tfinal
         self.alpha = adjust_factor  # Factor to adjust stepsize and/or initial temperature
         self.accept = 0
         self.StopCondition = False
@@ -208,7 +228,6 @@ def AcceptanceRatio(SA):
         SA.EQ = True  # <--- the next time around you'll go to TemperatureCycle()
     SA.accept = 0  # reset counter
     #print 'Step size:  ', SA.step_size
-    #print 'Acceptance ratio:  ', AR
     return
 
 
@@ -217,14 +236,18 @@ def Temperature_Cycle(SA, xdata, ydata, yerr, X, Xstart):
     try:
         Enew = E
     except:
+        print "Except"
         E = V(SA, xdata, ydata, yerr, Xstart)
         Enew = E
+
 
     # compare relative change in "equillibrium residuals".
     # If the average energy does not change more then the set tolerance between two consequetive temperatures
     # this means you are sufficiently close to the global minimum.
     E = V(SA, xdata, ydata, yerr, X)
-    SA.StopCondition = (np.abs(E - Enew) / Enew) < SA.Tolerance
+
+    Reached_Final_Temperature = SA.T < SA.final_temperature
+    SA.StopCondition = ( (np.abs(E - Enew) / Enew) < SA.Tolerance ) or Reached_Final_Temperature
     SA.EQ = False  # Reset
     return
 
