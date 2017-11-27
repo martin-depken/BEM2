@@ -13,7 +13,7 @@ import multiprocessing as mp
 '''
 Main function
 '''
-def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, Tstart=1.0, delta=2.0, tol=1E-1, Tfinal=0.01,adjust_factor=1.1, cooling_rate=0.85, N_int=1000,
+def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, Tstart=0.1, delta=2.0, tol=1E-3, Tfinal=0.01,adjust_factor=1.1, cooling_rate=0.85, N_int=1000,
                  AR_low=40, AR_high=60, use_multiprocessing=False, nprocs=4):
     '''
     Use Simmulated Annealing to perform Least-Square Fitting
@@ -49,42 +49,43 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, Tstart=1.0, delta=
 
     # Adjust initial temperature
     InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
-    
     print 'Initial temp:  ', SA.T
     
     # Set initial trial:
     X = Xstart
     SA.potential = V(SA, xdata,ydata,yerr,X)
-    
+
+    # Main loop:
     steps = 0
-    E = 0
+    Eavg = 0
     while True:
         steps += 1
-        if(steps % 1E3 == 0):
-            print steps
+        # if(steps % 1E3 == 0):
+        #     print steps
 
         # I am starting to check If I switch temperature or if I stop simulation
         if SA.EQ:
             # E will represent the average energy at the current temperature
             # during the cycle of SA.interval steps that has just passed.
-            E += V(SA, xdata, ydata, yerr, X)
+            Eavg += V(SA, xdata, ydata, yerr, X)
         if (steps % SA.interval == 0):
             if SA.EQ:
-                E /= SA.interval
-                Enew = E
+                Eavg /= SA.interval
 
                 # Input this into the check for the stopcondition
                 # Call update_temperature() and checks if global stop condition is reached:
-                Temperature_Cycle(SA, xdata, ydata, yerr, X, Xstart)
 
-                # Reset the cummalative sum:
-                E = 0
+                Temperature_Cycle(SA, Eavg)
+
+                # Reset the cummalative sum/ average Energy:
+                Eavg = 0
 
                 if SA.StopCondition:
                     break
 
             # updates stepsize based on Acceptance ratio and checks if you will update
-            #  Temperature next time around (updates value "SimAnneal.EQ" to "TRUE"):
+            #  Temperature next time around (updates value "SimAnneal.EQ" to "TRUE")
+            # This happens every SA.interval iterations:
             AcceptanceRatio(SA)
 
 
@@ -168,6 +169,7 @@ class SimAnneal():
     self.EQ: Will you move to next temperature? Did you equillibrate at current temperature?
     self.StopcCondition: Global criteria to stop the optimisation procedure.
     self.potential: Variable to store old potential and save on the number of computations
+    self.average_energy: Variable to store the average energy at the previous temperature.
     self.processes: Contains the worker processes (pool) to evaluate the potential
     self.MP: Flag to use multiprocesing or not
     '''
@@ -187,6 +189,7 @@ class SimAnneal():
         self.cooling_rate = cooling_rate
         self.interval = N_int
         self.potential = np.inf
+        self.average_energy = np.inf
         self.MP = use_multiprocessing
         
         if self.MP:
@@ -231,24 +234,23 @@ def AcceptanceRatio(SA):
     return
 
 
-def Temperature_Cycle(SA, xdata, ydata, yerr, X, Xstart):
-    update_temperature(SA)
-    try:
-        Enew = E
-    except:
-        print "Except"
-        E = V(SA, xdata, ydata, yerr, Xstart)
-        Enew = E
-
-
+def Temperature_Cycle(SA, Eavg):
     # compare relative change in "equillibrium residuals".
     # If the average energy does not change more then the set tolerance between two consequetive temperatures
-    # this means you are sufficiently close to the global minimum.
-    E = V(SA, xdata, ydata, yerr, X)
+    # this means you are sufficiently close to the global minimum:
+    tolerance_low_enough = abs(SA.average_energy - Eavg)/SA.average_energy < SA.Tolerance
+    SA.average_energy = Eavg
+    # move to next temperature:
+    update_temperature(SA)
 
-    Reached_Final_Temperature = SA.T < SA.final_temperature
-    SA.StopCondition = ( (np.abs(E - Enew) / Enew) < SA.Tolerance ) or Reached_Final_Temperature
-    SA.EQ = False  # Reset
+    # If temperature is low enough, stop the optimisation:
+    reached_final_temperature = SA.T < SA.final_temperature
+
+    # check stop condition
+    SA.StopCondition = tolerance_low_enough or reached_final_temperature
+
+    # done with equillibrium <--> reset
+    SA.EQ = False
     return
 
 
