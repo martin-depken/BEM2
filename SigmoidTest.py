@@ -12,17 +12,17 @@ import matplotlib.pyplot as plt
 
 # Create data
 # x = np.linspace(0,100,1000)
-A = 1.0
+A = 10.0
 C = 0.75
 nseed = 8
-yerr = 0.05
+yerr = 0.5
 x = np.arange(1,20)
 y = A / (1 + np.exp(-(x-nseed) * C)) + yerr * np.random.rand(len(x))
 
 # Fit parameters
-start_params = np.array([5,35,6])
+start_params = np.array([0.6,35,6])
 lwr_bnd = [0.0, 1.0, 0.0]
-uppr_bnd  = [10.0,20.0, 4.0 ]
+uppr_bnd  = [15.0,20.0, 4.0 ]
 
 
 # Do fit
