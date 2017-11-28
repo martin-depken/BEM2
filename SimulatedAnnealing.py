@@ -133,9 +133,18 @@ def V(SA, xdata,ydata,yerr,params):
     :return: Chi^2 value. Residual of weighted least squares (chi-squared).
     '''
     
+    # Multiprocessing
     if SA.MP:
-        data = datatotuples(xdata,ydata,yerr,params)
-        residual_sum = np.sum(SA.processes.map_async(mp_model_func,data).get())
+    
+        ind = split_data(SA,xdata)
+        worker_results = [SA.processes.apply_async(model_func , args = (xdata[ind[k]:ind[k+1]],ydata[ind[k]:ind[k+1]],yerr[ind[k]:ind[k+1]],params)) for k in range(SA.nprocs)]
+        
+        # Retrieve residuals
+        residual_sum = 0
+        for w in worker_results:
+            residual_sum += np.sum(w.get())
+        
+    # No multiprocessing    
     else:
         residual_sum = np.sum(model_func(xdata,ydata,yerr,params))
         
@@ -191,6 +200,7 @@ class SimAnneal():
         self.potential = np.inf
         self.average_energy = np.inf
         self.MP = use_multiprocessing
+        self.nprocs = nprocs
         
         if self.MP:
             self.processes = mp.Pool(nprocs)
@@ -297,34 +307,22 @@ def InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
 '''
 Multiprocessing functions
 '''
-# Map(_async) takes only one argument so the data is first converted to tuples and should be
-# unpacked within the model function
-def datatotuples(xdata,ydata,yerr,params):
-    xdata = xdata.tolist()
-    ydata = ydata.tolist()
-    yerr = yerr.tolist()
-    params = [params]*len(yerr)
-    
-    tuplelist = [(xdata[i],ydata[i],yerr[i],params[i]) for i in range(len(yerr))]
-    return tuplelist
 
-# The multicore version of the model function
-# This function should be adjusted to fit your model    
-def mp_model_func(data):
+# Gets the indices at which to split the data to distribute among the running processes
+def split_data(SA,data):
     
-    # Unpack data
-    xdata  = data[0]    
-    ydata  = data[1]
-    yerr   = data[2]
-    params = data[3]
+    length_data = len(data)
+    if length_data%SA.nprocs == 0:
+        split_list = np.arange(0,length_data,length_data/SA.nprocs)
+    else:
+        split_list = np.arange(0,length_data-(length_data%SA.nprocs),length_data/SA.nprocs)
+        for i in range(length_data%SA.nprocs):
+            split_list[i+1:] += 1
+        
+    split_list = split_list.tolist()
+    split_list.append(None)
     
-    # Unpack parameters
-    A = params[0]
-    nseed = params[1]
-    C = params[2]
+    return split_list
     
-    # Calculate residuals
-    model_result = A / (1 + np.exp(-(xdata-nseed) * C))
-    residuals = ( (model_result-ydata)/yerr )**2
-    
-    return residuals
+
+
