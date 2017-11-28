@@ -13,7 +13,8 @@ import multiprocessing as mp
 '''
 Main function
 '''
-def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, Tstart=0.1, delta=2.0, tol=1E-3, Tfinal=0.01,adjust_factor=1.1, cooling_rate=0.85, N_int=1000,
+def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
+                Tstart=0.1, delta=2.0, tol=1E-3, Tfinal=0.01,adjust_factor=1.1, cooling_rate=0.85, N_int=1000,
                  AR_low=40, AR_high=60, use_multiprocessing=False, nprocs=4):
     '''
     Use Simmulated Annealing to perform Least-Square Fitting
@@ -24,6 +25,11 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, Tstart=0.1, delta=
     :param Xstart: first guess for parameter values
     :param lwrbnd: lower bound parameters
     :param upbnd:  upper bound parameters. Parameter X[i] will satisfy: lwrbnd <= X[i] <= upbnd[i]
+    :param model: the name of the Python function that calculates the model values. This function must be in the form of:
+    model(x_value, parameters) (so parameters should be final argument).
+    Unpack the values within this funciton to keep this SimmAnneal code general.
+
+
     :return: Optimal parameter set (X, an array)
 
     ///////////
@@ -35,7 +41,8 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, Tstart=0.1, delta=
 
     # presets
     X = Xstart
-    SA = SimAnneal(Tstart=Tstart,
+    SA = SimAnneal(model=model,
+                   Tstart=Tstart,
                    delta=delta,
                    tol=tol,
                    Tfinal=Tfinal,
@@ -109,15 +116,17 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, Tstart=0.1, delta=
 Model (Potential)
 '''
 # Single core model function (for multicore see multiprocessing section)
-def model_func(xdata, ydata, yerr, params):
+def model_func(xdata, ydata, yerr, params,SA):
 
-    # Extract parameters
-    A = params[0]
-    nseed = params[1]
-    C = params[2]
-    
+    # # Extract parameters
+    # A = params[0]
+    # nseed = params[1]
+    # C = params[2]
+
+
     # Calculate residuals
-    model_result = A / (1 + np.exp(-(xdata-nseed) * C))
+    model_result = SA.model(xdata,params)
+    # model_result = A / (1 + np.exp(-(xdata-nseed) * C))
     residuals = ( (model_result-ydata)/yerr )**2
     
     return residuals
@@ -125,7 +134,6 @@ def model_func(xdata, ydata, yerr, params):
 def V(SA, xdata,ydata,yerr,params):
 
     '''
-    SHOULD ADJUST SUCH THAT THIS WORKS FOR ANY MODEL.
     :param xdata: datapoints
     :param ydata: measured values
     :param yerr: measurement error
@@ -134,10 +142,10 @@ def V(SA, xdata,ydata,yerr,params):
     '''
     
     if SA.MP:
-        data = datatotuples(xdata,ydata,yerr,params)
+        data = datatotuples(SA,xdata,ydata,yerr,params)
         residual_sum = np.sum(SA.processes.map_async(mp_model_func,data).get())
     else:
-        residual_sum = np.sum(model_func(xdata,ydata,yerr,params))
+        residual_sum = np.sum(model_func(xdata,ydata,yerr,params,SA))
         
     return residual_sum
 
@@ -151,6 +159,7 @@ class SimAnneal():
 
     INPUT
     -----
+    model : name of Python function used in the form model(x_values,parameters)
     Tstart : Starting temperature (should not matter, is reset during inital loop)
     delta : initial step size for parameter changes
     tol : Stop condition. If relative change in values is less then tolerance, you're done.
@@ -174,8 +183,9 @@ class SimAnneal():
     self.MP: Flag to use multiprocesing or not
     '''
 
-    def __init__(self, Tstart, delta, tol, Tfinal,adjust_factor, cooling_rate, N_int,
+    def __init__(self, model, Tstart, delta, tol, Tfinal,adjust_factor, cooling_rate, N_int,
                  AR_low, AR_high, use_multiprocessing, nprocs):
+        self.model = model
         self.T = Tstart
         self.step_size = delta
         self.Tolerance = tol
@@ -299,7 +309,7 @@ Multiprocessing functions
 '''
 # Map(_async) takes only one argument so the data is first converted to tuples and should be
 # unpacked within the model function
-def datatotuples(xdata,ydata,yerr,params):
+def datatotuples(SA,xdata,ydata,yerr,params):
     xdata = xdata.tolist()
     ydata = ydata.tolist()
     yerr = yerr.tolist()
@@ -310,7 +320,7 @@ def datatotuples(xdata,ydata,yerr,params):
 
 # The multicore version of the model function
 # This function should be adjusted to fit your model    
-def mp_model_func(data):
+def mp_model_func(data,SA):
     
     # Unpack data
     xdata  = data[0]    
@@ -319,12 +329,13 @@ def mp_model_func(data):
     params = data[3]
     
     # Unpack parameters
-    A = params[0]
-    nseed = params[1]
-    C = params[2]
+    # A = params[0]
+    # nseed = params[1]
+    # C = params[2]
     
     # Calculate residuals
-    model_result = A / (1 + np.exp(-(xdata-nseed) * C))
+    model_result = SA.model(xdata,params)
+    # model_result = A / (1 + np.exp(-(xdata-nseed) * C))
     residuals = ( (model_result-ydata)/yerr )**2
     
     return residuals
