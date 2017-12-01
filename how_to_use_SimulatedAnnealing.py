@@ -88,6 +88,27 @@ plot the result
 '''
 
 # Plot results
+plt.title('Fitting result')
+plt.plot(datapoints,my_model(datapoints,starting_guess),label='starting guess',linestyle='dashed')
+plt.plot(datapoints, my_model(datapoints,fit_result),label='fit')
+plt.errorbar(datapoints,experimental_values,yerr=error_amp,fmt='x', label='data')
+plt.legend(loc='best')
+plt.xlabel('x')
+plt.ylabel('y',rotation=0)
+# plt.show()
+
+'''
+double check: using the output file
+
+(this you must do in case of manual interupt)
+'''
+# fatch the last recorded parameter set:
+X = np.loadtxt('fit_results.txt')
+fit_result = X[-1,:]
+
+# Plot results
+plt.figure()
+plt.title('Retreiving the final stored parameter set')
 plt.plot(datapoints,my_model(datapoints,starting_guess),label='starting guess',linestyle='dashed')
 plt.plot(datapoints, my_model(datapoints,fit_result),label='fit')
 plt.errorbar(datapoints,experimental_values,yerr=error_amp,fmt='x', label='data')
@@ -95,6 +116,3 @@ plt.legend(loc='best')
 plt.xlabel('x')
 plt.ylabel('y',rotation=0)
 plt.show()
-
-
-

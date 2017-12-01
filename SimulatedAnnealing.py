@@ -15,7 +15,9 @@ Main function
 '''
 def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
                 Tstart=0.1, delta=2.0, tol=1E-3, Tfinal=0.01,adjust_factor=1.1, cooling_rate=0.85, N_int=1000,
-                 AR_low=40, AR_high=60, use_multiprocessing=False, nprocs=4):
+                 AR_low=40, AR_high=60, use_multiprocessing=False, nprocs=4,
+                   output_file_results = 'fit_results.txt',
+                   output_file_monitor = 'monitor.txt'):
     '''
     Use Simmulated Annealing to perform Least-Square Fitting
 
@@ -29,8 +31,12 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
     model(x_value, parameters) (so parameters should be final argument).
     Unpack the values within this funciton to keep this SimmAnneal code general.
 
+    :param output_file_results: Name of outpur file containing the "best fit" parameter set (and intermediates).
+    :param output_file_monitor: Name of output file  containing additional info of the SA-optimisation process
+    (see the function: "write_monitor()")
 
-    :return: Optimal parameter set (X, an array)
+    :return: Optimal parameter set X
+    Results are also written to files.
 
     ///////////
     For remaining input arguments (Tstart,delta,tol, etc.) see the 'SimAnneal class'.
@@ -38,6 +44,10 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
     ///////////
 
     '''
+
+    # Open Files:
+    OutputFitResults = open(output_file_results,'w')
+    OutputMonitor = open(output_file_monitor,'w')
 
     # presets
     X = Xstart
@@ -95,6 +105,9 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
             # This happens every SA.interval iterations:
             AcceptanceRatio(SA)
 
+            # Every SA.interval steps we will store the results to enable one to 'opt-out' by interupting the code:
+            write_parameters(X, OutputFitResults)
+            write_monitor(SA,OutputMonitor)
 
         # Accept or reject trial configuration based on Metropolis Monte Carlo.
         # Input: parameters X, output: updates values of parameters X if accepted
@@ -108,6 +121,12 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
         
     print 'Final Temp: ', SA.T
     print 'Final Stepsize: ', SA.step_size
+    print 'final solution: ', X
+
+    #close files:
+    OutputFitResults.close()
+    OutputMonitor.close()
+
     return X
 
 
@@ -154,7 +173,7 @@ def V(SA, xdata,ydata,yerr,params):
     # No multiprocessing
     else:
         residual_sum = np.sum(chi_squared(xdata,ydata,yerr,params,SA.model))
-        
+
     return residual_sum
 
 
@@ -189,6 +208,8 @@ class SimAnneal():
     self.average_energy: Variable to store the average energy at the previous temperature.
     self.processes: Contains the worker processes (pool) to evaluate the potential
     self.MP: Flag to use multiprocesing or not
+
+    self.Monitor: a Python dictionary that stores the information that will get stored into a file
     '''
 
     def __init__(self, model, Tstart, delta, tol, Tfinal,adjust_factor, cooling_rate, N_int,
@@ -215,7 +236,8 @@ class SimAnneal():
             self.processes = mp.Pool(nprocs)
         else:
             self.processes = None
-            
+
+        self.Monitor = {}
         return
 
 
@@ -270,6 +292,11 @@ def Temperature_Cycle(SA, Eavg):
 
     # done with equillibrium <--> reset
     SA.EQ = False
+
+    # Monitor (I assumed you come to this point at least once, otherwise there is not much to monitor anyways):
+    SA.Monitor['reached final temperature'] = reached_final_temperature
+    SA.Monitor['tolerance low enough']  = tolerance_low_enough
+    SA.Monitor['(last recorded) relative change average energy'] = abs(SA.average_energy - Eavg)/SA.average_energy
     return
 
 
@@ -299,7 +326,6 @@ def InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
         steps += 1
         if (steps % SA.interval == 0):
             AR = (SA.accept / float(SA.interval)) * 100
-            print AR
             if AR > SA.upperbnd:
                 SA.T /= SA.alpha
                 SA.accept = 0
@@ -336,3 +362,50 @@ def split_data(SA,data):
     
 
 
+'''
+Output Files
+'''
+def write_monitor(SA, output_file):
+    '''
+    makes a file with following information:
+    --------------------------------------
+    why did the code stop?:   {final temp, manually interupted, ...  }
+    (last recorded) temperature:
+    (last recorded) stepsize:
+    (last recorded) Chi-squared:
+    (last recorded) average energy difference:
+    '''
+
+
+
+    SA.Monitor['(last recorded) Temperature'] = SA.T
+    SA.Monitor['(last recorded) stepsize'] = SA.step_size
+    SA.Monitor['(last recorded) chi-squared'] = SA.potential
+    SA.Monitor['succes'] = SA.StopCondition
+
+
+    output_file.truncate(0)
+    for key in SA.Monitor:
+        output_file.write(str(key) + ':' + str(SA.Monitor[key]) + '\n' )
+
+
+def write_parameters(X, output_file):
+    '''
+    write current parameter set to file:
+    param_0||param_1|| ..... || param_N-1
+    ----------------------------------
+        .  ||   .   ||  .    ||  .
+        .  ||   .   ||  .    ||  .
+        .  ||   .   ||  .    ||  .
+        .  ||   .   ||  .    ||  .
+
+     (delimeter is a tab)
+
+     The last stored set will be the result of the optimasation process
+     if the simulated annealing ran until completion.
+    '''
+
+    for parameter in X:
+        output_file.write(str(parameter) + '\t')
+    output_file.write('\n')
+    return
