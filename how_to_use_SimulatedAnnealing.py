@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pylab as plt
 import SimulatedAnnealing as SA
+from scipy.linalg import expm
 
 
 
@@ -30,23 +31,43 @@ def Line(x,params):
     slope = params[0]
     offset = params[1]
     return slope*x + offset
+    
+def MatrixExponential(x,params):
+    factor = params[0]
+    matrix_size = 20
+    matrix = np.zeros((matrix_size,matrix_size))
+    
+    # Build a tridiagonal matrix
+    for d in range(-1,2):
+        diagonal = np.linspace(-10,10,num=(matrix_size-abs(d)))
+        matrix = matrix + np.diag(diagonal,k=d)
+        
+    # Exponentiate the matrix
+    y = []
+    for x_point in x:
+        matrix_exp = factor*expm(matrix*x_point)
+        y.append(matrix_exp[10,10])
+    
+    return y
+    
+    
 
 '''
 select model
 
 adjust this part depending on what model you want to fit
 '''
-my_model = Sigmoid  # select the name of the model function
+my_model = MatrixExponential  # select the name of the model function
 amplitude = 0.7
 half_saturation = 11
 decay = 2.5
-parameter_values = [amplitude,half_saturation,decay]
+parameter_values = [amplitude]
 
 
 '''
 Generating 'mock data'
 '''
-datapoints = np.linspace(1,21,22)
+datapoints = np.linspace(1,21,100)
 error_amp = [0.05] * len(datapoints)
 experimental_values = my_model(datapoints,parameter_values) + error_amp * np.random.rand(len(datapoints))
 
@@ -55,9 +76,9 @@ presets for the fit
 
 (adjust the number of values in the initial guess and upper and lower bounds to suite the model chosen)
 '''
-starting_guess = [5.0,0.3,6]
-lwr_bnd = [0.0,0,0]    # using np.inf to not use this bound (set it to +/- infinity)
-uppr_bnd  = [np.inf, 21,10]
+starting_guess = [1.0]
+lwr_bnd = [0.0]    # using np.inf to not use this bound (set it to +/- infinity)
+uppr_bnd  = [np.inf]
 
 
 '''
@@ -72,7 +93,7 @@ fit_result = SA.sim_anneal_fit(model=my_model,
              Xstart= starting_guess,
              lwrbnd=lwr_bnd,
              upbnd=uppr_bnd,
-             use_multiprocessing=False,
+             use_multiprocessing=True,
              nprocs=4,
              Tfinal=0.5,
               tol=0.001,
