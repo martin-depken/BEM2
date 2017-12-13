@@ -45,9 +45,7 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
 
     '''
 
-    # Open Files:
-    OutputFitResults = open(output_file_results,'w')
-    OutputMonitor = open(output_file_monitor,'w')
+
 
     # presets
     X = Xstart
@@ -67,11 +65,16 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
     # Adjust initial temperature
     InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
     print 'Initial temp:  ', SA.T
-    
+
+
+    # Open File for intermediate fit results:
+    OutputFitResults = open(output_file_results,'w',1)  #third argument will force the I/O to write into the file every line
+
+
+
     # Set initial trial:
     X = Xstart
     SA.potential = V(SA, xdata,ydata,yerr,X)
-
     # Main loop:
     steps = 0
     Eavg = 0
@@ -86,6 +89,11 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
             # during the cycle of SA.interval steps that has just passed.
             Eavg += V(SA, xdata, ydata, yerr, X)
         if (steps % SA.interval == 0):
+
+            # update the intermediate results:
+            write_parameters(X, OutputFitResults)
+            write_monitor(SA,output_file_monitor)   # might want to ommit this call and only write if SA.EQ == True (see call below)
+
             if SA.EQ:
                 Eavg /= SA.interval
 
@@ -94,9 +102,13 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
 
                 Temperature_Cycle(SA, Eavg)
 
+                # update monitor file:
+                write_monitor(SA, output_file_monitor)
+
                 # Reset the cummalative sum/ average Energy:
                 Eavg = 0
 
+                # stop the entire algorithm if condition is met:
                 if SA.StopCondition:
                     break
 
@@ -106,8 +118,7 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
             AcceptanceRatio(SA)
 
             # Every SA.interval steps we will store the results to enable one to 'opt-out' by interupting the code:
-            write_parameters(X, OutputFitResults)
-            write_monitor(SA,OutputMonitor)
+
 
         # Accept or reject trial configuration based on Metropolis Monte Carlo.
         # Input: parameters X, output: updates values of parameters X if accepted
@@ -125,7 +136,6 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
 
     #close files:
     OutputFitResults.close()
-    OutputMonitor.close()
 
     return X
 
@@ -147,7 +157,6 @@ def chi_squared(xdata, ydata, yerr, params,model):
     model_result = model(xdata,params)
     # model_result = A / (1 + np.exp(-(xdata-nseed) * C))
     residual = ( (model_result-ydata)/yerr )**2
-    
     return residual
 
 def V(SA, xdata,ydata,yerr,params):
@@ -258,7 +267,6 @@ def Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
         X = Xtrial
         SA.accept += 1
         SA.potential = Vnew
-        #print X, SA.potential
     return X
 
 
@@ -323,7 +331,7 @@ def InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
     '''
     steps = 0
     while True:
-        steps += 1
+        steps +=1
         if (steps % SA.interval == 0):
             AR = (SA.accept / float(SA.interval)) * 100
             if AR > SA.upperbnd:
@@ -337,7 +345,7 @@ def InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
                 break
         X = Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
     return
-    
+
 
 
 '''
@@ -365,7 +373,7 @@ def split_data(SA,data):
 '''
 Output Files
 '''
-def write_monitor(SA, output_file):
+def write_monitor(SA, output_file_name):
     '''
     makes a file with following information:
     --------------------------------------
@@ -376,17 +384,19 @@ def write_monitor(SA, output_file):
     (last recorded) average energy difference:
     '''
 
-
+    # Since I want to overwrite the content, I re-open the file
+    output_file = open(output_file_name, 'w')
 
     SA.Monitor['(last recorded) Temperature'] = SA.T
     SA.Monitor['(last recorded) stepsize'] = SA.step_size
     SA.Monitor['(last recorded) chi-squared'] = SA.potential
     SA.Monitor['succes'] = SA.StopCondition
 
-
-    output_file.truncate(0)
     for key in SA.Monitor:
         output_file.write(str(key) + ':' + str(SA.Monitor[key]) + '\n' )
+
+    output_file.close()
+    return
 
 
 def write_parameters(X, output_file):
