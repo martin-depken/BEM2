@@ -288,7 +288,7 @@ def Temperature_Cycle(SA, Eavg):
     # If the average energy does not change more then the set tolerance between two consequetive temperatures
     # this means you are sufficiently close to the global minimum:
     tolerance_low_enough = abs(SA.average_energy - Eavg)/SA.average_energy < SA.Tolerance
-    SA.average_energy = Eavg
+    
     # move to next temperature:
     update_temperature(SA)
 
@@ -305,6 +305,9 @@ def Temperature_Cycle(SA, Eavg):
     SA.Monitor['reached final temperature'] = reached_final_temperature
     SA.Monitor['tolerance low enough']  = tolerance_low_enough
     SA.Monitor['(last recorded) relative change average energy'] = abs(SA.average_energy - Eavg)/SA.average_energy
+    
+    # Update average energy
+    SA.average_energy = Eavg
     return
 
 
