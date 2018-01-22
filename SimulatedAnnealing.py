@@ -15,7 +15,7 @@ Main function
 '''
 def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
                 Tstart=0.1, delta=2.0, tol=1E-3, Tfinal=0.01,adjust_factor=1.1, cooling_rate=0.85, N_int=1000,
-                 AR_low=40, AR_high=60, use_multiprocessing=False, nprocs=4,
+                 AR_low=40, AR_high=60, use_multiprocessing=False, nprocs=4, use_relative_steps=True,
                    output_file_results = 'fit_results.txt',
                    output_file_monitor = 'monitor.txt'):
     '''
@@ -60,7 +60,8 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
                    AR_low=AR_low,
                    AR_high=AR_high,
                    use_multiprocessing=use_multiprocessing,
-                   nprocs=nprocs)
+                   nprocs=nprocs,
+                   use_relative_steps=use_relative_steps)
 
     # Adjust initial temperature
     InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
@@ -221,12 +222,13 @@ class SimAnneal():
     self.average_energy: Variable to store the average energy at the previous temperature.
     self.processes: Contains the worker processes (pool) to evaluate the potential
     self.MP: Flag to use multiprocesing or not
-
     self.Monitor: a Python dictionary that stores the information that will get stored into a file
+    self.use_relative_steps: Will take the (natural) logarithm of parameters (and stepsize) before constructing trial solutions.
+    (Exponentiates again before calulating potentials)
     '''
 
     def __init__(self, model, Tstart, delta, tol, Tfinal,adjust_factor, cooling_rate, N_int,
-                 AR_low, AR_high, use_multiprocessing, nprocs):
+                 AR_low, AR_high, use_multiprocessing, nprocs, use_relative_steps):
         self.model = model
         self.T = Tstart
         self.step_size = delta
@@ -251,17 +253,31 @@ class SimAnneal():
             self.processes = None
 
         self.Monitor = {}
+
+        self.RelativeSteps = use_relative_steps
         return
 
 
 def Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
     T = SA.T
     delta = SA.step_size
+    print X
+    if SA.RelativeSteps:
+        delta = np.log(SA.step_size)
+        X = np.log(X)
+
+
     Xtrial = X + np.random.uniform(-delta, delta, size=len(X))
+
+    if SA.RelativeSteps:
+        Xtrial = np.exp(Xtrial)
+        X = np.exp(X)
 
     # add limits to the parameter values:
     for i in range(len(Xtrial)):
         Xtrial[i] = min(upbnd[i], max(lwrbnd[i], Xtrial[i]))
+
+
 
     # Let V({dataset}|{parameterset}) be your residual function.
     # Metropolis:
