@@ -261,17 +261,14 @@ class SimAnneal():
 def Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
     T = SA.T
     delta = SA.step_size
-    print X
     if SA.RelativeSteps:
         delta = np.log(SA.step_size)
         X = np.log(X)
-
-
-    Xtrial = X + np.random.uniform(-delta, delta, size=len(X))
-
-    if SA.RelativeSteps:
+        Xtrial = X + np.random.uniform(-delta, delta, size=len(X))
         Xtrial = np.exp(Xtrial)
         X = np.exp(X)
+    else:
+        Xtrial = X + np.random.uniform(-delta, delta, size=len(X))
 
     # add limits to the parameter values:
     for i in range(len(Xtrial)):
