@@ -72,7 +72,8 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
     OutputFitResults = open(output_file_results,'w',1)  #third argument will force the I/O to write into the file every line
     for k in range(len(X)):
         OutputFitResults.write('Parameter ' + str(k+1) + '\t')
-    OutputFitResults.write('Potential \t')
+    OutputFitResults.write('Potential' + '\t')
+    OutputFitResults.write('Equilibruim' + '\t')
     OutputFitResults.write('\n')
 
 
@@ -96,7 +97,7 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
         if (steps % SA.interval == 0):
 
             # update the intermediate results:
-            write_parameters(X, SA.potential ,OutputFitResults)
+            write_parameters(X, SA,OutputFitResults)
             write_monitor(SA,output_file_monitor)   # might want to ommit this call and only write if SA.EQ == True (see call below)
 
             if SA.EQ:
@@ -422,15 +423,15 @@ def write_monitor(SA, output_file_name):
     return
 
 
-def write_parameters(X, potential, output_file):
+def write_parameters(X, SA, output_file):
     '''
     write current parameter set to file:
-    param_0||param_1|| ..... || param_N-1
-    ----------------------------------
-        .  ||   .   ||  .    ||  .
-        .  ||   .   ||  .    ||  .
-        .  ||   .   ||  .    ||  .
-        .  ||   .   ||  .    ||  .
+    param_0||param_1|| ..... || param_N-1 || Potential || Equillibrium
+    ------------------------------------------------------------------
+        .  ||   .   ||  .    ||  .        ||    .       || TRUE/FALSE
+        .  ||   .   ||  .    ||  .        ||    .       || TRUE/FALSE
+        .  ||   .   ||  .    ||  .        ||    .       || TRUE/FALSE
+        .  ||   .   ||  .    ||  .        ||    .       || TRUE/FALSE
 
      (delimeter is a tab)
 
@@ -438,8 +439,11 @@ def write_parameters(X, potential, output_file):
      if the simulated annealing ran until completion.
     '''
 
+
+
     for parameter in X:
         output_file.write(str(parameter) + '\t')
-    output_file.write(str(potential) + '\t')
+    output_file.write(str(SA.potential) + '\t')
+    output_file.write(str(SA.EQ) + '\t')
     output_file.write('\n')
     return
