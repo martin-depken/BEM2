@@ -66,6 +66,8 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
     # Adjust initial temperature
     InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
     print 'Initial temp:  ', SA.T
+    # store initial Temperature
+    SA.initial_temperature = SA.T
 
 
     # Open File for intermediate fit results:
@@ -129,6 +131,7 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
         # Accept or reject trial configuration based on Metropolis Monte Carlo.
         # Input: parameters X, output: updates values of parameters X if accepted
         X = Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
+
     
     # Close worker processes
     if SA.MP:
@@ -234,6 +237,7 @@ class SimAnneal():
         self.T = Tstart
         self.step_size = delta
         self.Tolerance = tol
+        self.initial_temperature = Tstart
         self.final_temperature = Tfinal
         self.alpha = adjust_factor  # Factor to adjust stepsize and/or initial temperature
         self.accept = 0
@@ -247,7 +251,8 @@ class SimAnneal():
         self.average_energy = np.inf
         self.MP = use_multiprocessing
         self.nprocs = nprocs
-        
+
+
         if self.MP:
             self.processes = mp.Pool(nprocs)
         else:
@@ -259,11 +264,18 @@ class SimAnneal():
         return
 
 
-def Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
-    T = SA.T
+
+
+def TakeStep(SA,X):
+    '''
+    This function produces the trial solution to be checked later for acceptance
+    :param SA:
+    :param X: current solution
+    :return: trial solution
+    '''
+
     delta = SA.step_size
     if SA.RelativeSteps:
-        delta = np.log(SA.step_size)
         X = np.log(X)
         Xtrial = X + np.random.uniform(-delta, delta, size=len(X))
         Xtrial = np.exp(Xtrial)
@@ -271,14 +283,49 @@ def Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
     else:
         Xtrial = X + np.random.uniform(-delta, delta, size=len(X))
 
-    # add limits to the parameter values:
-    for i in range(len(Xtrial)):
-        Xtrial[i] = min(upbnd[i], max(lwrbnd[i], Xtrial[i]))
+    return Xtrial
 
+
+
+def Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
+    '''
+    Metropolis Algorithm to decide if you accept the trial solution.
+    Trial solution (Xtrial) is generated with function ('TakeStep()').
+    Solution is always rejected if any of its parameter values are outside user defined bounds.
+    Only perform Metropolis step if Xtrial is within the bounds given.
+    If you do not enter Metropolis, you by definition rejected the trial solution ('tabula rasa' rule)
+    :param SA:
+    :param X: current solution
+    :param xdata: datapoints
+    :param ydata: experimental/data values
+    :param yerr: error on experimental data
+    :param lwrbnd: user defined lower bound for parameter values
+    :param upbnd: user defined upper bound for parameter values
+    :return: current solution (rejected Xtrial) or updated solution (accepted Xtrial)
+    '''
+    # T = SA.T
+    # delta = SA.step_size
+    # if SA.RelativeSteps:
+    #     delta = np.log(SA.step_size)
+    #     X = np.log(X)
+    #     Xtrial = X + np.random.uniform(-delta, delta, size=len(X))
+    #     Xtrial = np.exp(Xtrial)
+    #     X = np.exp(X)
+    # else:
+    #     Xtrial = X + np.random.uniform(-delta, delta, size=len(X))
+    # # add limits to the parameter values:
+    # for i in range(len(Xtrial)):
+    #     Xtrial[i] = min(   upbnd[i], max(lwrbnd[i], Xtrial[i])  )
+
+
+    Xtrial = TakeStep(SA, X)
+    while (Xtrial < lwrbnd).any() or (Xtrial > upbnd).any():
+        Xtrial = TakeStep(SA,X)
 
 
     # Let V({dataset}|{parameterset}) be your residual function.
     # Metropolis:
+    T = SA.T
     Vnew = V(SA, xdata, ydata, yerr, Xtrial)
     Vold = SA.potential
     if (np.random.uniform() < np.exp(-(Vnew - Vold) / T)):
@@ -286,6 +333,9 @@ def Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
         SA.accept += 1
         SA.potential = Vnew
     return X
+
+
+
 
 
 def AcceptanceRatio(SA):
@@ -297,7 +347,6 @@ def AcceptanceRatio(SA):
     else:
         SA.EQ = True  # <--- the next time around you'll go to TemperatureCycle()
     SA.accept = 0  # reset counter
-    #print 'Step size:  ', SA.step_size
     return
 
 
@@ -313,8 +362,13 @@ def Temperature_Cycle(SA, Eavg):
     # If temperature is low enough, stop the optimisation:
     reached_final_temperature = SA.T < SA.final_temperature
 
+    # Bug fix: If temperature is too high, the average energy will not change.
+    # So wait until temperature is low enough before considering the tolerance
+    # For now: T < 10% T0
+    temperature_low_enough = SA.T < (0.01 * SA.initial_temperature)
+
     # check stop condition
-    SA.StopCondition = tolerance_low_enough or reached_final_temperature
+    SA.StopCondition = (tolerance_low_enough and temperature_low_enough) or reached_final_temperature
 
     # done with equillibrium <--> reset
     SA.EQ = False
