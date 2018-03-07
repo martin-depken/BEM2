@@ -14,6 +14,7 @@ import multiprocessing as mp
 Main function
 '''
 def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
+                   objective_function='chi_squared',
                 Tstart=0.1, delta=2.0, tol=1E-3, Tfinal=0.01,adjust_factor=1.1, cooling_rate=0.85, N_int=1000,
                  AR_low=40, AR_high=60, use_multiprocessing=False, nprocs=4, use_relative_steps=True,
                    output_file_results = 'fit_results.txt',
@@ -61,7 +62,8 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
                    AR_high=AR_high,
                    use_multiprocessing=use_multiprocessing,
                    nprocs=nprocs,
-                   use_relative_steps=use_relative_steps)
+                   use_relative_steps=use_relative_steps,
+                   objective_function=objective_function)
 
     # Adjust initial temperature
     InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
@@ -156,17 +158,17 @@ Model (Potential)
 # Single core model function (for multicore see multiprocessing section)
 def chi_squared(xdata, ydata, yerr, params,model):
 
-    # # Extract parameters
-    # A = params[0]
-    # nseed = params[1]
-    # C = params[2]
-
-
     # Calculate residuals
     model_result = model(xdata,params)
-    # model_result = A / (1 + np.exp(-(xdata-nseed) * C))
     residual = ( (model_result-ydata)/yerr )**2
     return residual
+
+
+def LogLikeLihood(xdata,ydata,yerr, params, model):
+    P = model(xdata, params)
+    LLike = -np.log(P)
+    return LLike
+
 
 def V(SA, xdata,ydata,yerr,params):
 
@@ -175,24 +177,24 @@ def V(SA, xdata,ydata,yerr,params):
     :param ydata: measured values
     :param yerr: measurement error
     :param params: parameters of model to fit
-    :return: Chi^2 value. Residual of weighted least squares (chi-squared).
+    :return: Chi^2 value, LogLikeLihood value... the value of the objective function to be minimized
     '''
-    
+
     # Multiprocessing
     if SA.MP:
         ind = split_data(SA,xdata)
-        worker_results = [SA.processes.apply_async(chi_squared , args = (xdata[ind[k]:ind[k+1]],ydata[ind[k]:ind[k+1]],yerr[ind[k]:ind[k+1]],params,SA.model)) for k in range(SA.nprocs)]
+        worker_results = [SA.processes.apply_async(SA.objective_function , args = (xdata[ind[k]:ind[k+1]],ydata[ind[k]:ind[k+1]],yerr[ind[k]:ind[k+1]],params,SA.model)) for k in range(SA.nprocs)]
         
         # Retrieve residuals from different processes / cores
-        residual_sum = 0
+        objective_sum = 0
         for w in worker_results:
-            residual_sum += np.sum(w.get())
+            objective_sum += np.sum(w.get())
         
     # No multiprocessing
     else:
-        residual_sum = np.sum(chi_squared(xdata,ydata,yerr,params,SA.model))
+        objective_sum = np.sum(SA.objective_function(xdata,ydata,yerr,params,SA.model))
 
-    return residual_sum
+    return objective_sum
 
 
 '''
@@ -232,7 +234,7 @@ class SimAnneal():
     '''
 
     def __init__(self, model, Tstart, delta, tol, Tfinal,adjust_factor, cooling_rate, N_int,
-                 AR_low, AR_high, use_multiprocessing, nprocs, use_relative_steps):
+                 AR_low, AR_high, use_multiprocessing, nprocs, use_relative_steps, objective_function):
         self.model = model
         self.T = Tstart
         self.step_size = delta
@@ -261,6 +263,17 @@ class SimAnneal():
         self.Monitor = {}
 
         self.RelativeSteps = use_relative_steps
+
+
+
+        if objective_function== 'chi_squared':
+            self.objective_function = chi_squared
+        if objective_function == 'relative error':
+            'minimize relative error'
+        if objective_function == 'Maximum Likelihood':
+            self.objective_function = LogLikeLihood
+
+
         return
 
 
@@ -365,7 +378,7 @@ def Temperature_Cycle(SA, Eavg):
     # Bug fix: If temperature is too high, the average energy will not change.
     # So wait until temperature is low enough before considering the tolerance
     # For now: T < 10% T0
-    temperature_low_enough = SA.T < (0.01 * SA.initial_temperature)
+    temperature_low_enough = SA.T < (0.1 * SA.initial_temperature)
 
     # check stop condition
     SA.StopCondition = (tolerance_low_enough and temperature_low_enough) or reached_final_temperature
