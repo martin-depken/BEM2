@@ -170,6 +170,11 @@ def LogLikeLihood(xdata,ydata,yerr, params, model):
     return LLike
 
 
+def RelativeError(xdata,ydata,yerr,params,model):
+    model_result = model(xdata,params)
+    relative_error =  ( (model_result - ydata) / ydata )**2
+    return relative_error
+
 def V(SA, xdata,ydata,yerr,params):
 
     '''
@@ -269,7 +274,7 @@ class SimAnneal():
         if objective_function== 'chi_squared':
             self.objective_function = chi_squared
         if objective_function == 'relative error':
-            'minimize relative error'
+            self.objective_function = RelativeError
         if objective_function == 'Maximum Likelihood':
             self.objective_function = LogLikeLihood
 
