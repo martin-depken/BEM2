@@ -382,8 +382,8 @@ def Temperature_Cycle(SA, Eavg):
 
     # Bug fix: If temperature is too high, the average energy will not change.
     # So wait until temperature is low enough before considering the tolerance
-    # For now: T < 10% T0
-    temperature_low_enough = SA.T < (0.1 * SA.initial_temperature)
+    # For now: T < 1% T0
+    temperature_low_enough = SA.T < (0.01 * SA.initial_temperature)
 
     # check stop condition
     SA.StopCondition = (tolerance_low_enough and temperature_low_enough) or reached_final_temperature
