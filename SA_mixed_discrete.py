@@ -14,16 +14,17 @@
 #############################################################
 import numpy as np
 import multiprocessing as mp
-
+import CRISPR_simple_steps_breakpoints as CRISPR
 '''
 Main function
 '''
 
 
 def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
+                   nmbr_breakpoints_C,nmbr_breakpoints_I,
                    objective_function='chi_squared',
                    Tstart=0.1, delta=2.0, tol=1E-3, Tfinal=0.01, adjust_factor=1.1, cooling_rate=0.85, N_int=1000,
-                   AR_low=40, AR_high=60, use_multiprocessing=False, nprocs=4, use_relative_steps=True,
+                   AR_low=40, AR_high=60, use_multiprocessing=False, nprocs=4, use_relative_steps=False,
                    output_file_results='fit_results.txt',
                    output_file_monitor='monitor.txt'):
     '''
@@ -68,7 +69,9 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
                    use_multiprocessing=use_multiprocessing,
                    nprocs=nprocs,
                    use_relative_steps=use_relative_steps,
-                   objective_function=objective_function)
+                   objective_function=objective_function,
+                   nmbr_breakpoints_C=nmbr_breakpoints_C,
+                   nmbr_breakpoints_I=nmbr_breakpoints_I)
 
     # Adjust initial temperature
     InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
@@ -245,7 +248,12 @@ class SimAnneal():
     '''
 
     def __init__(self, model, Tstart, delta, tol, Tfinal, adjust_factor, cooling_rate, N_int,
-                 AR_low, AR_high, use_multiprocessing, nprocs, use_relative_steps, objective_function):
+                 AR_low, AR_high, use_multiprocessing, nprocs, use_relative_steps, objective_function,
+                 nmbr_breakpoints_C, nmbr_breakpoints_I):
+
+        self.nmbr_breakpoints_C = nmbr_breakpoints_C
+        self.nmbr_breakpoints_I = nmbr_breakpoints_I
+
         self.model = model
         self.T = Tstart
         self.step_size = delta
@@ -303,94 +311,6 @@ def move_slopes(SA, Y):
         Ytrial = Y + np.random.uniform(-delta, delta, size=len(Y))
     return Ytrial
 
-
-def move_breakpoints(breakpoints, mode='match'):
-    '''
-    Update the configuration of the breakpoints:
-    1) check if there are more breakpoints or more empty sites
-    2) select the smallest group
-    3) generate_neighbour() configuration for as many times as there are members in the selected group
-    4) convert back to breakpoints if we are moving the voids.
-    '''
-    # 0) specific to match/mismatch breakpoints:
-    if mode == 'match':
-        max_complexity = 18
-    elif mode == 'mismatch':
-        max_complexity = 19
-
-    # 1) Do we move the breakpoints or the empty sites?
-    nmbr_breakpoints = len(breakpoints)
-    nmbr_empty = max_complexity - nmbr_breakpoints
-
-    # A)If majority is empty, move the breakpoints:
-    if nmbr_breakpoints <= nmbr_empty:
-        # A1) Move the breakpoints:
-        for i in range(nmbr_breakpoints):
-            breakpoints = generate_neighbour(breakpoints, max_complexity)
-
-    # B)If majority is breakpoints, move the empty sites:
-    else:
-        # B1) Determine the location of the sites without a breakpoint:
-        empty_sites = convert_breakpoints_empty(breakpoints, max_complexity)
-
-        # B2) Move the empty sites:
-        for i in range(nmbr_empty):
-            empty_sites = generate_neighbour(empty_sites, max_complexity)
-
-        # B3) Convert back to list of breakpoint locations:
-        new_breakpoints = convert_breakpoints_empty(empty_sites, max_complexity)
-        breakpoints = new_breakpoints
-    return breakpoints
-
-def convert_breakpoints_empty( occupied_sites, max_complexity):
-    full_list = [i for i in range(1,max_complexity+1)]
-    remaining_sites=[]
-    for x in full_list:
-        if x in occupied_sites:
-            continue
-        else:
-            remaining_sites.append(x)
-    return remaining_sites
-
-
-def generate_neighbour(config, max_complexity):
-    '''
-    Generates a neighbouring configuration from the current one.
-    Works both for the breakpoints or the "empty-sites".
-    '''
-    # store new configuratioin in a copy of the array (to avoid problems with overwriting arrays):
-    new_config = config[:]
-
-    # spCas9:
-    Nguide = 20
-
-    # 0) Make a legal move: Select a breakpoint/empty site that can move in at least one direction:
-    allowed_moves = []
-    while len(allowed_moves) == 0:
-        # 1) select breakpoint to move:
-        index = np.random.randint(low=0, high=len(config))
-        chosen_one = config[index]
-        left_neighbour = chosen_one - 1
-        right_neighbour = min(chosen_one + 1, max_complexity)
-
-        # 2) check what moves are available:
-        left_open = left_neighbour not in config
-        right_open = right_neighbour not in config
-        neighbours_open = [left_neighbour * left_open, right_neighbour * right_open]
-        allowed_moves = []
-        for i in np.nonzero(neighbours_open)[0]:
-            allowed_moves.append(neighbours_open[i])
-
-        # 0) if no allowed_moves, lenght-0, try again.
-        # Make the above as while-loop, this replaces the loop to induce a legal move
-
-    # 3) Move to one of the available neighbouring sites, with equal weight if both are available:
-    index2 = np.random.randint(low=0, high=len(allowed_moves))
-    trial_point = allowed_moves[index2]
-    new_config[index] = trial_point
-    return new_config
-
-
 def TakeStep(SA, X, lwrbnd, upbnd):
     '''
     Make different types of moves for the breakpoints and slopes
@@ -424,10 +344,10 @@ def TakeStep(SA, X, lwrbnd, upbnd):
     # 2A) If we move the breakpoints:
     if MoveBreakPoints:
         # A1) matches:
-        breakpoints_match_trial = move_breakpoints(breakpoints_match,mode='match')
+        breakpoints_match_trial = CRISPR.move_breakpoints(breakpoints_match,mode='match')
 
         # A2) mismatches:
-        breakpoints_mismatch_trial = move_breakpoints(breakpoints_mismatch,mode='mismatch')
+        breakpoints_mismatch_trial = CRISPR.move_breakpoints(breakpoints_mismatch,mode='mismatch')
 
         # A3) combine to get new configuration of parameters:
         Xtrial = np.concatenate((breakpoints_match_trial, breakpoints_mismatch_trial, slopes))
@@ -468,7 +388,7 @@ def Metropolis(SA, X, xdata, ydata, yerr, lwrbnd, upbnd):
     :param upbnd: user defined upper bound for parameter values
     :return: current solution (rejected Xtrial) or updated solution (accepted Xtrial)
     '''
-    Xtrial, MoveBreakPoints, UseFulMove = TakeStep(SA,X,lwrbnd,upbnd)
+    Xtrial, MoveBreakPoints = TakeStep(SA,X,lwrbnd,upbnd)
     # Let V({dataset}|{parameterset}) be your objective function.
     # Metropolis:
     T = SA.T
@@ -599,6 +519,10 @@ Output Files
 '''
 
 
+'''
+Output Files
+'''
+
 def write_monitor(SA, output_file_name):
     '''
     makes a file with following information:
@@ -644,6 +568,7 @@ def write_parameters(X, SA, output_file):
     for parameter in X:
         output_file.write(str(parameter) + '\t')
     output_file.write(str(SA.potential) + '\t')
-    output_file.write(str(SA.EQ) + '\t')
+    output_file.write(str(SA.EQ) )
     output_file.write('\n')
     return
+
