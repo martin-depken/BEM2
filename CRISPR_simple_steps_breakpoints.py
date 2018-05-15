@@ -14,8 +14,6 @@ def move_breakpoints(breakpoints, mode='match'):
     elif mode == 'mismatch':
         max_complexity = 19
 
-    print "entered module"
-
     # 1) Do we move the breakpoints or the empty sites?
     nmbr_breakpoints = len(breakpoints)
     nmbr_empty = max_complexity - nmbr_breakpoints
