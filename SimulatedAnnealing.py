@@ -67,7 +67,7 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
 
     # Adjust initial temperature
     InitialLoop(SA, X, xdata, ydata, yerr, lwrbnd, upbnd)
-    print 'Initial temp:  ', SA.T
+    print('Initial temp:  ', SA.T)
     # store initial Temperature
     SA.initial_temperature = SA.T
 
@@ -77,7 +77,7 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
     for k in range(len(X)):
         OutputFitResults.write('Parameter ' + str(k+1) + '\t')
     OutputFitResults.write('Potential' + '\t')
-    OutputFitResults.write('Equilibruim' + '\t')
+    OutputFitResults.write('Equilibruim')
     OutputFitResults.write('\n')
 
 
@@ -137,13 +137,13 @@ def sim_anneal_fit(xdata, ydata, yerr, Xstart, lwrbnd, upbnd, model,
     
     # Close worker processes
     if SA.MP:
-        print 'Close workers..'
+        print('Close workers..')
         SA.processes.close()
         SA.processes.join()
         
-    print 'Final Temp: ', SA.T
-    print 'Final Stepsize: ', SA.step_size
-    print 'final solution: ', X
+    print('Final Temp: ', SA.T)
+    print('Final Stepsize: ', SA.step_size)
+    print('final solution: ', X)
 
     #close files:
     OutputFitResults.close()
@@ -174,6 +174,9 @@ def RelativeError(xdata,ydata,yerr,params,model):
     model_result = model(xdata,params)
     relative_error =  ( (model_result - ydata) / ydata )**2
     return relative_error
+
+
+
 
 def V(SA, xdata,ydata,yerr,params):
 
@@ -278,6 +281,9 @@ class SimAnneal():
         if objective_function == 'Maximum Likelihood':
             self.objective_function = LogLikeLihood
 
+        if objective_function == 'chi_squared_peicewise_linear_Delta':
+            self.objective_function == Chisqrd_peicewise_linear_Delta
+
 
         return
 
@@ -286,7 +292,7 @@ class SimAnneal():
 
 def TakeStep(SA,X):
     '''
-    This function produces the trial solution to be checked later for acceptance
+    This function produces a trial configuration for the continuous variables(slopes)
     :param SA:
     :param X: current solution
     :return: trial solution
